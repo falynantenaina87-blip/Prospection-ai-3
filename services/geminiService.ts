@@ -1,14 +1,17 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { BusinessLead, AiAnalysisResult } from "../types";
 
-// Initialize the client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to get client instance safely
+const getAiClient = () => {
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+};
 
 /**
  * Step 1: Find businesses using Gemini 2.5 Flash with Google Maps Grounding.
  */
 export const searchBusinesses = async (keyword: string, location: string): Promise<BusinessLead[]> => {
   try {
+    const ai = getAiClient();
     const prompt = `Trouve 20 entreprises correspondant à "${keyword}" à "${location}". 
     Retourne une liste avec leur nom, adresse complète, note moyenne, nombre d'avis, numéro de téléphone et site web si disponible.`;
 
@@ -20,29 +23,36 @@ export const searchBusinesses = async (keyword: string, location: string): Promi
       },
     });
 
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    // Safe extraction without optional chaining for build stability
+    let chunks: any[] = [];
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.groundingMetadata && candidate.groundingMetadata.groundingChunks) {
+        chunks = candidate.groundingMetadata.groundingChunks;
+      }
+    }
     
     if (!chunks || chunks.length === 0) {
       return [];
     }
 
-    const candidates = chunks.filter(c => c.maps && c.maps.title);
+    // Filter valid chunks
+    const candidates = chunks.filter((c: any) => c.maps && c.maps.title);
     
-    const parsedLeads: BusinessLead[] = candidates.map((c, i) => {
-        // Safe extraction of phone number handling opaque types
+    const parsedLeads: BusinessLead[] = candidates.map((c: any, i: number) => {
         let phoneNumber: string | undefined = undefined;
-        if (c.maps && 'phoneNumber' in c.maps) {
-            phoneNumber = (c.maps as any).phoneNumber;
+        if (c.maps.phoneNumber) {
+            phoneNumber = c.maps.phoneNumber;
         }
 
         return {
             id: `lead-${Date.now()}-${i}`,
-            name: c.maps?.title || "Entreprise Inconnue",
-            address: c.maps?.address || "Adresse non trouvée",
-            googleMapsUri: c.maps?.uri,
-            rating: c.maps?.rating,
-            userRatingCount: c.maps?.userRatingCount,
-            website: c.maps?.websiteUri,
+            name: c.maps.title || "Entreprise Inconnue",
+            address: c.maps.address || "Adresse non trouvée",
+            googleMapsUri: c.maps.uri,
+            rating: c.maps.rating,
+            userRatingCount: c.maps.userRatingCount,
+            website: c.maps.websiteUri,
             phone: phoneNumber,
             status: 'pending',
         };
@@ -65,10 +75,10 @@ export const searchBusinesses = async (keyword: string, location: string): Promi
 
 /**
  * Step 2: Analyze a specific lead using Gemini 3 Flash Preview.
- * Performs Triple Verification: Existence, Tech Audit, Business Relevance.
  */
 export const analyzeLead = async (lead: BusinessLead): Promise<AiAnalysisResult> => {
   try {
+    const ai = getAiClient();
     const schema: Schema = {
       type: Type.OBJECT,
       properties: {
@@ -87,7 +97,6 @@ export const analyzeLead = async (lead: BusinessLead): Promise<AiAnalysisResult>
       required: ["email", "isResponsive", "isHttps", "priorityStatus", "statusSummary", "digitalWeakness", "salesPitch"],
     };
 
-    // We enable Google Search to allow the model to "browse" for the email and verify site context
     const prompt = `
       Tu es un expert en Lead Generation. Effectue une TRIPLE VÉRIFICATION sur cette entreprise :
       
@@ -119,7 +128,7 @@ export const analyzeLead = async (lead: BusinessLead): Promise<AiAnalysisResult>
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
-        tools: [{ googleSearch: {} }], // Enable search to find emails and verify validity
+        tools: [{ googleSearch: {} }],
       },
     });
 
