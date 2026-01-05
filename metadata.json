@@ -1,0 +1,5 @@
+{
+  "name": "ProspectIA - Générateur de Leads",
+  "description": "Application de prospection intelligente utilisant Gemini 2.5 pour la recherche via Google Maps et Gemini 3 pour l'audit numérique et la génération d'arguments de vente.",
+  "requestFramePermissions": []
+}
