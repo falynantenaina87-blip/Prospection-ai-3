@@ -28,19 +28,25 @@ export const searchBusinesses = async (keyword: string, location: string): Promi
 
     const candidates = chunks.filter(c => c.maps && c.maps.title);
     
-    const parsedLeads: BusinessLead[] = candidates.map((c, i) => ({
-        id: `lead-${Date.now()}-${i}`,
-        name: c.maps?.title || "Entreprise Inconnue",
-        address: c.maps?.address || "Adresse non trouvée",
-        googleMapsUri: c.maps?.uri,
-        rating: c.maps?.rating,
-        userRatingCount: c.maps?.userRatingCount,
-        website: c.maps?.websiteUri,
-        // Often maps data includes phone, we map it here if available in the opaque chunk object
-        // (Note: The SDK types might not expose phone directly in all versions, but we store it if found)
-        phone: (c.maps as any)?.phoneNumber, 
-        status: 'pending',
-    }));
+    const parsedLeads: BusinessLead[] = candidates.map((c, i) => {
+        // Safe extraction of phone number handling opaque types
+        let phoneNumber: string | undefined = undefined;
+        if (c.maps && 'phoneNumber' in c.maps) {
+            phoneNumber = (c.maps as any).phoneNumber;
+        }
+
+        return {
+            id: `lead-${Date.now()}-${i}`,
+            name: c.maps?.title || "Entreprise Inconnue",
+            address: c.maps?.address || "Adresse non trouvée",
+            googleMapsUri: c.maps?.uri,
+            rating: c.maps?.rating,
+            userRatingCount: c.maps?.userRatingCount,
+            website: c.maps?.websiteUri,
+            phone: phoneNumber,
+            status: 'pending',
+        };
+    });
 
     // Deduplicate based on name
     const uniqueLeads = parsedLeads.filter((lead, index, self) =>
